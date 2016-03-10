@@ -1,8 +1,8 @@
 ﻿# Script name:   	check_ms_iis_application_pool.ps1
-# Version:          v0.01.160310
+# Version:          v0.02.160310
 # Created on:    	10/03/2016																		
 # Author:        	D'Haese Willem
-# Purpose:       	Checks Microsoft Windows process count, cpu and memory usage
+# Purpose:       	Checks Microsoft Windows IIS application pool cpu and memory usage
 # On Github:		https://github.com/willemdh/check_ms_iis_application_pool
 # On OutsideIT:		https://outsideit.net/check-ms-iis-application-pool
 # Recent History:       	
@@ -16,14 +16,21 @@
 
 #Requires –Version 2.0
 
-$DebugPreference = 'Continue'
-$VerbosePreference = 'Continue'
+$DebugPreference = 'SilentlyContinue'
+$VerbosePreference = 'SilentlyContinue'
 
 $IISStruct = New-Object PSObject -Property @{
     StopWatch = [System.Diagnostics.Stopwatch]::StartNew();
-    ProcessName = '';
-    Minimum = '';
-    Maximum = '';
+    ApplicationPool = '';
+    ProcessId = '';
+    Process = '';
+    PoolCount = '';
+    WarningMemory = '';
+    CriticalMemory = '';
+    WarningCpu = '';
+    CriticalCpu = '';
+    CurrentMemory = '';
+    CurrentCpu = '';
     Duration = '';
     Exitcode = 3;
     ReturnString = 'UNKNOWN: Please debug the script...'
@@ -131,27 +138,45 @@ Function Initialize-Args {
                 $Value = ''
             }
             switch -regex -casesensitive ($CurrentArg) {
-                "^(-P|--ProcessName)$" {
+                "^(-A|--ApplicationPool)$" {
                     if ($value -match "^[a-zA-Z0-9._-]+$") {
-                        $IISStruct.ProcessName = $Value
+                        $IISStruct.ApplicationPool = $Value
                     }
                     else {
                         throw "Method `"$value`" does not meet regex requirements."
                     }
                     $i++
                 }
-                "^(-m|--Minimum)$" {
+                "^(-WM|--WarningMemory)$" {
                     if ($value -match "^[0-9]{1,10}$") {
-                        $IISStruct.Minimum = $Value
+                        $IISStruct.WarningMemory = $Value
                     }
                     else {
                         throw "Method `"$value`" does not meet regex requirements."
                     }
                     $i++
                 }
-                "^(-M|--Maximum)$" {
+                "^(-CM|--CriticalMemory)$" {
                     if ($value -match "^[0-9]{1,10}$") {
-                        $IISStruct.Maximum = $Value
+                        $IISStruct.CriticalMemory = $Value
+                    }
+                    else {
+                        throw "Method `"$value`" does not meet regex requirements."
+                    }
+                    $i++
+                }
+                "^(-WC|--WarningCpu)$" {
+                    if ($value -match "^[0-9]{1,10}$") {
+                        $IISStruct.WarningCpu = $Value
+                    }
+                    else {
+                        throw "Method `"$value`" does not meet regex requirements."
+                    }
+                    $i++
+                }
+                "^(-CC|--CriticalCpu)$" {
+                    if ($value -match "^[0-9]{1,10}$") {
+                        $IISStruct.CriticalCpu = $Value
                     }
                     else {
                         throw "Method `"$value`" does not meet regex requirements."
@@ -178,21 +203,29 @@ Function Test-Strings {
     $BadChars | ForEach-Object {
         If ( $String.Contains("$_") ) {
             Write-Host "Error: String `"$String`" contains illegal characters."
-            Exit $WsusStruct.ExitCode
+            Exit $IISStruct.ExitCode
         }
     }
     Return $true
 } 
 
 Function Invoke-CheckIISApplicationPool {
-    Write-Log Verbose Info 'Invoke-CheckProcess launched.'
-
-# Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match 'Test-Willem-01'}  | Select-Object -Expand ProcessId
-# appcmd list wp
-
+    Import-Module WebAdministration
+    Write-Log Verbose Info 'Invoke-CheckIISApplication launched.'
+    $IISStruct.ProcessId = Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool}  | Select-Object -Expand ProcessId 
+    $IISStruct.Process = get-wmiobject Win32_PerfFormattedData_PerfProc_Process | ? { $_.idprocess -eq $IISStruct.ProcessId } 
+    $IISStruct.CurrentCpu = $IISStruct.Process.PercentProcessorTime
+    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Percent CPU: $($IISStruct.CurrentCpu)"
+    $IISStruct.CurrentMemory = [Math]::Round(($IISStruct.Process.workingSetPrivate / 1mb),2)
+    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Private Memory: $($IISStruct.CurrentMemory)"
+    $Sites = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path='/']/parent::*" machine/webroot/apphost -name name
+    $Apps = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path!='/']" machine/webroot/apphost -name path
+    $IISStruct.PoolCount = ($Sites,$Apps | ForEach {$_.value}).count
     $IISStruct.ExitCode = 0
-    $IISStruct.ReturnString = 'Check MS Win Process finished successfully..'
+    $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.PoolCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
+    $IISStruct.ReturnString += " | 'app_count'=$($IISStruct.PoolCount), 'pool_cpu'=$($IISStruct.CurrentCpu)%, 'pool_memory'=$($IISStruct.CurrentCpu)MB"
 }
+
 #endregion Functions
 
 #region Main
