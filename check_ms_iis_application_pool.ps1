@@ -1,10 +1,10 @@
 ﻿# Script name:   	check_ms_iis_application_pool.ps1
-# Version:          v0.02.160310
+# Version:          v0.03.160310
 # Created on:    	10/03/2016																		
 # Author:        	D'Haese Willem
 # Purpose:       	Checks Microsoft Windows IIS application pool cpu and memory usage
 # On Github:		https://github.com/willemdh/check_ms_iis_application_pool
-# On OutsideIT:		https://outsideit.net/check-ms-iis-application-pool
+# On OutsideIT:		https//outsideit.net/check-ms-iis-application-pool
 # Recent History:       	
 #	10/03/16 => Initial creation
 # Copyright:
@@ -25,6 +25,7 @@ $IISStruct = New-Object PSObject -Property @{
     ProcessId = '';
     Process = '';
     PoolCount = '';
+    PoolState = '';
     WarningMemory = '';
     CriticalMemory = '';
     WarningCpu = '';
@@ -210,20 +211,41 @@ Function Test-Strings {
 } 
 
 Function Invoke-CheckIISApplicationPool {
-    Import-Module WebAdministration
-    Write-Log Verbose Info 'Invoke-CheckIISApplication launched.'
-    $IISStruct.ProcessId = Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool}  | Select-Object -Expand ProcessId 
-    $IISStruct.Process = get-wmiobject Win32_PerfFormattedData_PerfProc_Process | ? { $_.idprocess -eq $IISStruct.ProcessId } 
-    $IISStruct.CurrentCpu = $IISStruct.Process.PercentProcessorTime
-    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Percent CPU: $($IISStruct.CurrentCpu)"
-    $IISStruct.CurrentMemory = [Math]::Round(($IISStruct.Process.workingSetPrivate / 1mb),2)
-    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Private Memory: $($IISStruct.CurrentMemory)"
-    $Sites = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path='/']/parent::*" machine/webroot/apphost -name name
-    $Apps = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path!='/']" machine/webroot/apphost -name path
-    $IISStruct.PoolCount = ($Sites,$Apps | ForEach {$_.value}).count
-    $IISStruct.ExitCode = 0
-    $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.PoolCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
-    $IISStruct.ReturnString += " | 'app_count'=$($IISStruct.PoolCount), 'pool_cpu'=$($IISStruct.CurrentCpu)%, 'pool_memory'=$($IISStruct.CurrentCpu)MB"
+    Try {
+        Import-Module WebAdministration
+        If (Get-ChildItem IIS:\AppPools | Where-Object {$_.Name -eq "$($IISStruct.ApplicationPool)"}) {
+            $IISStruct.PoolState = Get-ChildItem IIS:\AppPools | Where-Object {$_.Name -eq "$($IISStruct.ApplicationPool)"} | Select-Object State -ExpandProperty State
+            If ( $IISStruct.PoolState -eq 'Started') {
+                $IISStruct.ProcessId = Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool}  | Select-Object -Expand ProcessId 
+                If ( $IISStruct.ProcessId ) {
+                    $IISStruct.Process = get-wmiobject Win32_PerfFormattedData_PerfProc_Process | ? { $_.IdProcess -eq $IISStruct.ProcessId } 
+                    $IISStruct.CurrentCpu = $IISStruct.Process.PercentProcessorTime
+                    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Percent CPU: $($IISStruct.CurrentCpu)"
+                    $IISStruct.CurrentMemory = [Math]::Round(($IISStruct.Process.workingSetPrivate / 1MB),2)
+                    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Private Memory: $($IISStruct.CurrentMemory)"
+                    $Sites = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path='/']/parent::*" machine/webroot/apphost -name name
+                    $Apps = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path!='/']" machine/webroot/apphost -name path
+                    $IISStruct.PoolCount = ($Sites,$Apps | ForEach {$_.value}).count
+                    $IISStruct.ExitCode = 0
+                    $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.PoolCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
+                    $IISStruct.ReturnString += " | 'app_count'=$($IISStruct.PoolCount), 'pool_cpu'=$($IISStruct.CurrentCpu)%, 'pool_memory'=$($IISStruct.CurrentMemory)MB"
+                }
+                Else {
+                    Throw "Application Pool `"$($IISStruct.ApplicationPool)`" not found in WMI."
+                }
+            }
+            Else {
+                Throw "Application Pool `"$($IISStruct.ApplicationPool)`" is $($IISStruct.PoolState)."       
+            }
+        }
+        Else {
+            Throw "Application Pool `"$($IISStruct.ApplicationPool)`" does not exist."
+        }
+    }
+    Catch {
+        $IISStruct.ExitCode = 2
+        $IISStruct.ReturnString = "CRITICAL: $_"
+    }
 }
 
 #endregion Functions
@@ -236,7 +258,7 @@ if ($Args) {
             Invoke-CheckIISApplicationPool
     }
     else {
-        $IISStruct.ReturnString = 'Script needs mandatory parameters to work.'
+        $IISStruct.ReturnString = 'CRITICAL: Script needs mandatory parameters to work.'
         $IISStruct.ExitCode = 2
     }
 }
