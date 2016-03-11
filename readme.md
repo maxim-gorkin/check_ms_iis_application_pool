@@ -6,7 +6,7 @@ Checks Microsoft Windows IIS application pool CPU and memory usage
 
 ### Screenshots
 
-Not yet
+![IIS 01](/../screenshots/check-ms-iis-application-pool-outputs.png?raw=true "IIS Application Pool Outputs"
 
 ### Status
 
