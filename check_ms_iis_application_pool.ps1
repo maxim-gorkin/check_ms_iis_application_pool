@@ -1,19 +1,20 @@
-# Script name:   	check_ms_iis_application_pool.ps1
-# Version:          v0.03.160406
-# Created on:    	10/03/2016																		
-# Author:        	D'Haese Willem
-# Purpose:       	Checks Microsoft Windows IIS application pool cpu and memory usage
-# On Github:		https://github.com/willemdh/check_ms_iis_application_pool
-# On OutsideIT:		https//outsideit.net/check-ms-iis-application-pool
-# Recent History:       	
-#	10/03/16 => Initial creation
-#	06/04/16 => Added Run AppPoolOnDemand option - WRI
+# Script name:      check_ms_iis_application_pool.ps1
+# Version:          v0.05.160609
+# Created on:       10/03/2016
+# Author:           Willem D'Haese
+# Purpose:          Checks Microsoft Windows IIS application pool cpu and memory usage
+# On Github:        https://github.com/willemdh/check_ms_iis_application_pool
+# On OutsideIT:     https://outsideit.net/check-ms-iis-application-pool
+# Recent History:
+#   10/03/16 => Initial creation
+#   06/04/16 => Added Run AppPoolOnDemand option - WRI
+#   09/06/16 => Cleanup and formatting for release
 # Copyright:
-#	This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published
-#	by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed 
-#	in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
-#	PARTICULAR PURPOSE. See the GNU General Public License for more details. You should have received a copy of the GNU General Public 
-#	License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#   This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published
+#   by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed 
+#   in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A 
+#   PARTICULAR PURPOSE. See the GNU General Public License for more details. You should have received a copy of the GNU General Public 
+#   License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #Requires –Version 2.0
 
@@ -35,7 +36,7 @@ $IISStruct = New-Object PSObject -Property @{
     CurrentCpu = '';
     Duration = '';
     Exitcode = 3;
-	AppPoolOnDemand = 0;
+    AppPoolOnDemand = 0;
     ReturnString = 'UNKNOWN: Please debug the script...'
 }
 
@@ -186,7 +187,7 @@ Function Initialize-Args {
                     }
                     $i++
                 }
-				"^(-APOD|--AppPoolOnDemand)$" {
+                "^(-APOD|--AppPoolOnDemand)$" {
                     if ($value -match "^[0-1]{1,2}$") {
                         $IISStruct.AppPoolOnDemand = $Value
                     }
@@ -195,7 +196,7 @@ Function Initialize-Args {
                     }
                     $i++
                 }
-				
+
                 "^(-h|--Help)$" {
                     Write-Help
                 }
@@ -228,8 +229,7 @@ Function Invoke-CheckIISApplicationPool {
         If (Get-ChildItem IIS:\AppPools | Where-Object {$_.Name -eq "$($IISStruct.ApplicationPool)"}) {
             $IISStruct.PoolState = Get-ChildItem IIS:\AppPools | Where-Object {$_.Name -eq "$($IISStruct.ApplicationPool)"} | Select-Object State -ExpandProperty State
             If ( $IISStruct.PoolState -eq 'Started') {
-				 $IISStruct.ProcessId = Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool}  | Select-Object -Expand ProcessId 
-				 
+                $IISStruct.ProcessId = Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool}  | Select-Object -Expand ProcessId
                 If ( $IISStruct.ProcessId ) {
                     $IISStruct.Process = get-wmiobject Win32_PerfFormattedData_PerfProc_Process | ? { $_.IdProcess -eq $IISStruct.ProcessId } 
                     $IISStruct.CurrentCpu = $IISStruct.Process.PercentProcessorTime
@@ -244,21 +244,20 @@ Function Invoke-CheckIISApplicationPool {
                     $IISStruct.ReturnString += " | 'app_count'=$($IISStruct.PoolCount), 'pool_cpu'=$($IISStruct.CurrentCpu)%, 'pool_memory'=$($IISStruct.CurrentMemory)MB"
                 }
                 Else {
-					if($IISStruct.AppPoolOnDemand = 1){
-					$IISStruct.Process = 0
-					$IISStruct.CurrentCpu  = 0
-					$IISStruct.CurrentMemory = 0
-					$Sites = 0
-					$Apps = 0
-					$IISStruct.PoolCount = 0
-					$IISStruct.ExitCode = 0
-                    $IISStruct.ReturnString = "OK:  Application Pool Started but no process is assigned yet `"$($IISStruct.ApplicationPool)`" with 0 Applications. {CPU: 0%}{Memory: 0MB}"
-					$IISStruct.ReturnString += " | 'app_count'=0, 'pool_cpu'=0%, 'pool_memory'=0MB"
-					}
-					else
-					{
-					Throw "Application Pool `"$($IISStruct.ApplicationPool)`" not found in WMI."
-					}
+                    If ( $IISStruct.AppPoolOnDemand = 1 ) {
+                        $IISStruct.Process = 0
+                        $IISStruct.CurrentCpu  = 0
+                        $IISStruct.CurrentMemory = 0
+                        $Sites = 0
+                        $Apps = 0
+                        $IISStruct.PoolCount = 0
+                        $IISStruct.ExitCode = 0
+                        $IISStruct.ReturnString = "OK:  Application Pool Started but no process is assigned yet `"$($IISStruct.ApplicationPool)`" with 0 Applications. {CPU: 0%}{Memory: 0MB}"
+                        $IISStruct.ReturnString += " | 'app_count'=0, 'pool_cpu'=0%, 'pool_memory'=0MB"
+                    }
+                    Else {
+                        Throw "Application Pool `"$($IISStruct.ApplicationPool)`" not found in WMI."
+                    }
                 }
             }
             Else {
