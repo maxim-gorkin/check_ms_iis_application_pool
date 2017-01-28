@@ -1,14 +1,16 @@
 # Script name:      check_ms_iis_application_pool.ps1
-# Version:          v0.05.160609
+# Version:          v1.01.170128
 # Created on:       10/03/2016
 # Author:           Willem D'Haese
 # Purpose:          Checks Microsoft Windows IIS application pool cpu and memory usage
 # On Github:        https://github.com/willemdh/check_ms_iis_application_pool
-# On OutsideIT:     https://outsideit.net/check-ms-iis-application-pool
+# On OutsideIT:     https//outsideit.net/check-ms-iis-application-pool
 # Recent History:
 #   10/03/16 => Initial creation
 #   06/04/16 => Added Run AppPoolOnDemand option - WRI
 #   09/06/16 => Cleanup and formatting for release
+#   27/01/17 => AppCmd method as workaround for hanging gci
+#   28/01/16 => appcount to the back
 # Copyright:
 #   This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed 
@@ -16,18 +18,19 @@
 #   PARTICULAR PURPOSE. See the GNU General Public License for more details. You should have received a copy of the GNU General Public 
 #   License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#Requires –Version 2.0
+#Requires -Version 2.0
 
 $DebugPreference = 'SilentlyContinue'
 $VerbosePreference = 'SilentlyContinue'
 
 $IISStruct = New-Object PSObject -Property @{
-    StopWatch = [System.Diagnostics.Stopwatch]::StartNew();
+    StopWatch = [Diagnostics.Stopwatch]::StartNew();
     ApplicationPool = '';
     ProcessId = '';
     Process = '';
     PoolCount = '';
     PoolState = '';
+    SitesCount = '';
     WarningMemory = '';
     CriticalMemory = '';
     WarningCpu = '';
@@ -37,6 +40,8 @@ $IISStruct = New-Object PSObject -Property @{
     Duration = '';
     Exitcode = 3;
     AppPoolOnDemand = 0;
+    AppCmd = 0;
+    AppCmdList = '';
     ReturnString = 'UNKNOWN: Please debug the script...'
 }
 
@@ -44,9 +49,9 @@ $IISStruct = New-Object PSObject -Property @{
 function Write-Log {
     [CmdletBinding()]
     param (
-        [parameter(Mandatory=$true)][string]$Log,
-        [parameter(Mandatory=$true)][ValidateSet('Debug', 'Info', 'Warning', 'Error', 'Unknown')][string]$Severity,
-        [parameter(Mandatory=$true)][string]$Message
+        [parameter(Mandatory)][string]$Log,
+        [parameter(Mandatory)][ValidateSet('Debug', 'Info', 'Warning', 'Error', 'Unknown')][string]$Severity,
+        [parameter(Mandatory)][string]$Message
     )
     $Now = Get-Date -Format 'yyyy-MM-dd HH:mm:ss,fff'
     $LocalScriptName = split-path $MyInvocation.PSCommandPath -Leaf
@@ -69,10 +74,10 @@ function Write-Log {
             $Ip = $IpOrHost
         }
         else {
-            $Ip = ([System.Net.Dns]::GetHostAddresses($IpOrHost)).IPAddressToString
+            $Ip = ([Net.Dns]::GetHostAddresses($IpOrHost)).IPAddressToString
         }
         Try {
-            $LocalHostname = ([System.Net.Dns]::GetHostByName((hostname.exe)).HostName).tolower()
+            $LocalHostname = ([Net.Dns]::GetHostByName((hostname.exe)).HostName).tolower()
             $JsonObject = (New-Object PSObject | 
                 Add-Member -PassThru NoteProperty logsource $LocalHostname | 
                 Add-Member -PassThru NoteProperty hostname $LocalHostname | 
@@ -91,7 +96,7 @@ function Write-Log {
             $Socket.Close()
         }
         catch {
-            Write-Host "${Now}: ${LocalScriptName}: Error: Something went wrong while trying to send message to Logstash server `"$Log`"."
+            Write-Host "${Now}: ${LocalScriptName}: Error: Something went wrong while trying to send message to Logstash server `"$Log`"."
         }
         Write-Verbose "${Now}: ${LocalScriptName}: ${Severity}: Ip: $Ip Port: $Port JsonString: $JsonString"
     }
@@ -121,7 +126,7 @@ function Write-Log {
 
 Function Initialize-Args {
     Param ( 
-        [Parameter(Mandatory=$True)]$Args
+        [Parameter(Mandatory)]$Args
     )
     try {
         For ( $i = 0; $i -lt $Args.count; $i++ ) { 
@@ -147,7 +152,7 @@ Function Initialize-Args {
                         $IISStruct.ApplicationPool = $Value
                     }
                     else {
-                        throw "Method `"$value`" does not meet regex requirements."
+                        throw "Application Pool `"$value`" does not meet regex requirements."
                     }
                     $i++
                 }
@@ -196,7 +201,15 @@ Function Initialize-Args {
                     }
                     $i++
                 }
-
+               "^(-Appcmd|-AppCmd|-appcmd|-APPCMD)$" {
+                    if ($value -match "^[0-1]{1,2}$") {
+                        $IISStruct.Appcmd = $Value
+                    }
+                    else {
+                        throw "Method `"$value`" does not meet regex requirements."
+                    }
+                    $i++
+                }
                 "^(-h|--Help)$" {
                     Write-Help
                 }
@@ -212,7 +225,7 @@ Function Initialize-Args {
     }
 }
 Function Test-Strings {
-    Param ( [Parameter(Mandatory=$True)][string]$String )
+    Param ( [Parameter(Mandatory)][string]$String )
     $BadChars=@("``", '|', ';', "`n")
     $BadChars | ForEach-Object {
         If ( $String.Contains("$_") ) {
@@ -238,10 +251,10 @@ Function Invoke-CheckIISApplicationPool {
                     Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Private Memory: $($IISStruct.CurrentMemory)"
                     $Sites = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path='/']/parent::*" machine/webroot/apphost -name name
                     $Apps = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path!='/']" machine/webroot/apphost -name path
-                    $IISStruct.PoolCount = ($Sites,$Apps | ForEach {$_.value}).count
+                    $IISStruct.SitesCount = ($Sites,$Apps | ForEach {$_.value}).count
                     $IISStruct.ExitCode = 0
-                    $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.PoolCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
-                    $IISStruct.ReturnString += " | 'app_count'=$($IISStruct.PoolCount), 'pool_cpu'=$($IISStruct.CurrentCpu)%, 'pool_memory'=$($IISStruct.CurrentMemory)MB"
+                    $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.SitesCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
+                    $IISStruct.ReturnString += " | 'pool_cpu'=$($IISStruct.CurrentCpu)%, 'pool_memory'=$($IISStruct.CurrentMemory)MB, 'app_count'=$($IISStruct.SitesCount)"
                 }
                 Else {
                     If ( $IISStruct.AppPoolOnDemand = 1 ) {
@@ -250,10 +263,10 @@ Function Invoke-CheckIISApplicationPool {
                         $IISStruct.CurrentMemory = 0
                         $Sites = 0
                         $Apps = 0
-                        $IISStruct.PoolCount = 0
+                        $IISStruct.SitesCount = 0
                         $IISStruct.ExitCode = 0
                         $IISStruct.ReturnString = "OK:  Application Pool Started but no process is assigned yet `"$($IISStruct.ApplicationPool)`" with 0 Applications. {CPU: 0%}{Memory: 0MB}"
-                        $IISStruct.ReturnString += " | 'app_count'=0, 'pool_cpu'=0%, 'pool_memory'=0MB"
+                        $IISStruct.ReturnString += " | 'pool_cpu'=0%, 'pool_memory'=0MB, 'app_count'=0"
                     }
                     Else {
                         Throw "Application Pool `"$($IISStruct.ApplicationPool)`" not found in WMI."
@@ -273,21 +286,104 @@ Function Invoke-CheckIISApplicationPool {
         $IISStruct.ReturnString = "CRITICAL: $_"
     }
 }
+Function Invoke-CheckIISWithAppCmd {
+    Try {
+        [xml]$AppCmdXml = C:\Windows\system32\inetsrv\appcmd.exe list apppools /xml
+        $IISStruct.PoolCount = $AppCmdXml.appcmd.APPPOOL.Count
 
+        If ( ! $IISStruct.PoolCount ) {
+             $IISStruct.PoolState = $AppCmdXml.appcmd.APPPOOL.'state'
+             if ( $AppCmdXml.appcmd.APPPOOL.'APPPOOL.NAME' -eq $IISStruct.ApplicationPool ) {
+                 $Found = $True
+             }
+             Else {
+                 $IISStruct.ReturnString = "CRITICAL: NO IIS application pool with name $($IISStruct.ApplicationPool) found. "
+                 $IISStruct.ExitCode = 2
+             }
+        }
+        Else {
+            $Found = $False
+            $i = 0
+            while ( ! $found -and $i -lt $IISStruct.PoolCount ) {
+                If ( $AppCmdXml.appcmd.APPPOOL[$i].'APPPOOL.NAME' -eq $IISStruct.ApplicationPool ) {
+                     Write-Log Verbose Info "Application pool found: $AppPool"
+                     $IISStruct.PoolState = $AppCmdXml.appcmd.APPPOOL[$i].'state'
+                     $Found = $True
+                 }
+                 Write-Log Verbose Info "Pool: $($AppCmdXml.appcmd.APPPOOL[$i].'APPPOOL.NAME')"
+                 $i++
+            }
+        }
+        If ( $Found ) {
+            If ( $IISStruct.PoolState -eq 'Started') {
+                $IISStruct.ProcessId = Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool}  | Select-Object -Expand ProcessId
+                If ( $IISStruct.ProcessId ) {
+                    $IISStruct.Process = get-wmiobject Win32_PerfFormattedData_PerfProc_Process | ? { $_.IdProcess -eq $IISStruct.ProcessId } 
+                    $IISStruct.CurrentCpu = $IISStruct.Process.PercentProcessorTime
+                    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Percent CPU: $($IISStruct.CurrentCpu)"
+                    $IISStruct.CurrentMemory = [Math]::Round(($IISStruct.Process.workingSetPrivate / 1MB),2)
+                    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Private Memory: $($IISStruct.CurrentMemory)"
+                    $Sites = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path='/']/parent::*" machine/webroot/apphost -name name
+                    $Apps = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path!='/']" machine/webroot/apphost -name path
+                    $IISStruct.SitesCount = ($Sites,$Apps | ForEach {$_.value}).count
+                    $IISStruct.ExitCode = 0
+                    $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.SitesCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
+                    $IISStruct.ReturnString += " | 'pool_cpu'=$($IISStruct.CurrentCpu)%, 'pool_memory'=$($IISStruct.CurrentMemory)MB, 'app_count'=$($IISStruct.SitesCount)"
+                }
+                Else {
+                    If ( $IISStruct.AppPoolOnDemand = 1 ) {
+                        $IISStruct.Process = 0
+                        $IISStruct.CurrentCpu  = 0
+                        $IISStruct.CurrentMemory = 0
+                        $Sites = 0
+                        $Apps = 0
+                        $IISStruct.SitesCount = 0
+                        $IISStruct.ExitCode = 0
+                        $IISStruct.ReturnString = "OK:  Application Pool Started but no process is assigned yet `"$($IISStruct.ApplicationPool)`" with 0 Applications. {CPU: 0%}{Memory: 0MB}"
+                        $IISStruct.ReturnString += " | 'pool_cpu'=0%, 'pool_memory'=0MB, 'app_count'=0"
+                    }
+                    Else {
+                        Throw "Application Pool `"$($IISStruct.ApplicationPool)`" not found in WMI."
+                    }
+                }
+            }
+            Else {
+                Throw "Application Pool `"$($IISStruct.ApplicationPool)`" is $($IISStruct.PoolState)."       
+            }
+        }
+        Else {
+            Throw "NO IIS application pool with name $($IISStruct.ApplicationPool) found. "
+        }
+    }   
+    Catch {
+        $IISStruct.ExitCode = 2
+        $IISStruct.ReturnString = "CRITICAL: $_"
+    }            
+}
 #endregion Functions
 
 #region Main
 
-if ($Args) {
-    if($Args[0].ToString() -ne "$ARG1$" -and $Args.count -ge 2){
+If ( $Args ) {
+    If ( ! ( $Args[0].ToString()).StartsWith('$') ) {
+        If ( $Args.count -ge 1 ) {
             Initialize-Args $Args
-            Invoke-CheckIISApplicationPool
+        }
     }
-    else {
+    Else {
         $IISStruct.ReturnString = 'CRITICAL: Script needs mandatory parameters to work.'
         $IISStruct.ExitCode = 2
     }
 }
+
+If ( $IISStruct.AppCmd -eq 0 ) {
+    Invoke-CheckIISApplicationPool
+}
+else {
+    Invoke-CheckIISWithAppCmd
+}
+
+
 Write-Host $IISStruct.ReturnString
 Exit $IISStruct.ExitCode
 
