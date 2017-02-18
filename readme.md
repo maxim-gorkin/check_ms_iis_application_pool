@@ -1,8 +1,8 @@
-# Nagios plugin to check Microsoft IIS application pool CPU and memory usage
+# Nagios plugin to check Microsoft IIS application pool states
 
 ### Idea
 
-Checks Microsoft Windows IIS application pool CPU and memory usage
+Checks Microsoft Windows IIS application pool state returning web application count, % CPU usage and memory usage.
 
 ### Screenshots
 
@@ -10,11 +10,11 @@ Checks Microsoft Windows IIS application pool CPU and memory usage
 
 ### Status
 
-In development. 
+In production. 
 
 ### How To
 
-Not yet.
+https://outsideit.net/monitoring-iis-application-pools/
 
 ### Help
 
@@ -22,7 +22,7 @@ In case you find a bug or have a feature request, please make an issue on GitHub
 
 ### On Nagios Exchange
 
-Not yet.
+https://exchange.nagios.org/directory/Plugins/Web-Servers/IIS/Check-Microsoft-IIS-Application-Pool/details
 
 ### Copyright
 
