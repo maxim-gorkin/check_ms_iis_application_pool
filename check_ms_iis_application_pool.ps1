@@ -1,16 +1,16 @@
 # Script name:      check_ms_iis_application_pool.ps1
-# Version:          v1.03.170218
+# Version:          v1.04.170922
 # Created on:       10/03/2016
 # Author:           Willem D'Haese
 # Purpose:          Checks Microsoft Windows IIS application pool cpu and memory usage
 # On Github:        https://github.com/willemdh/check_ms_iis_application_pool
-# On OutsideIT:     https://outsideit.net/monitoring-iis-application-pools/
+# On OutsideIT:     https://outsideit.net/monitoring-iis-application-pools
 # Recent History:
-#   06/04/16 => Added Run AppPoolOnDemand option - WRI
 #   09/06/16 => Cleanup and formatting for release
 #   27/01/17 => AppCmd method as workaround for hanging gci
 #   28/01/16 => appcount to the back
 #   18/02/17 => Cleanup and PSSharpening
+#   22/09/17 => Fixed perfdata not working in some cases (Yannick Charton)
 # Copyright:
 #   This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed 
