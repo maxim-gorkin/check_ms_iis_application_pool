@@ -1,5 +1,5 @@
 # Script name:      check_ms_iis_application_pool.ps1
-# Version:          v1.05.170922
+# Version:          v1.06.180411
 # Created on:       10/03/2016
 # Author:           Willem D'Haese
 # Purpose:          Checks Microsoft Windows IIS application pool cpu and memory usage
@@ -11,6 +11,7 @@
 #   18/02/17 => Cleanup and PSSharpening
 #   15/09/17 => Fixed perfdata not working in some cases (Yannick Charton)
 #   22/09/17 => Fixed bug with multiple w3wp processes
+#   11/04/18 => Fixed bug with multiple w3wp processes, cpu and memory parts (Yannick Charton)
 # Copyright:
 #   This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed 
@@ -22,6 +23,8 @@
 
 $DebugPreference = 'SilentlyContinue'
 $VerbosePreference = 'SilentlyContinue'
+#$DebugPreference = 'Continue'
+#$VerbosePreference = 'Continue'
 
 $IISStruct = New-Object -TypeName PSObject -Property @{
     StopWatch = [Diagnostics.Stopwatch]::StartNew()
@@ -112,7 +115,7 @@ Function Write-Log {
         }
         ElseIf (!(Test-Path -Path $Log)) {
             Try {
-                $null = New-Item -Path $Log -Type file -Force	
+                $null = New-Item -Path $Log -Type file -Force
             } 
             Catch { 
                 $Now = Get-Date -Format 'yyyy-MM-dd HH:mm:ss,fff'
@@ -316,11 +319,25 @@ Function Invoke-CheckIISApplicationPool {
             If ( $IISStruct.PoolState -eq 'Started') {
                 $IISStruct.ProcessId = Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool}  | Select-Object -Expand ProcessId
                 If ( $IISStruct.ProcessId ) {
-                    $IISStruct.Process = Get-Wmiobject -Class Win32_PerfFormattedData_PerfProc_Process | Where-Object { $_.IdProcess -eq $IISStruct.ProcessId } 
-                    $IISStruct.CurrentCpu = $IISStruct.Process.PercentProcessorTime
-                    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Percent CPU: $($IISStruct.CurrentCpu)"
-                    $IISStruct.CurrentMemory = [Math]::Round(($IISStruct.Process.workingSetPrivate / 1MB),2)
-                    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $($IISStruct.ProcessId) Private Memory: $($IISStruct.CurrentMemory)"
+                    If ( @($($IISStruct.ProcessId)) -gt 1 ) {
+                        $IISStruct.CurrentCpu  = 0
+                        $IISStruct.CurrentMemory = 0
+                        Get-WmiObject -NameSpace 'root\WebAdministration' -class 'WorkerProcess' | Where-Object {$_.AppPoolName -match $IISStruct.ApplicationPool} | Select-Object -Expand ProcessId | ForEach-Object {
+                            $MyProcessId=$_
+                            $IISStruct.Process = Get-Wmiobject -Class Win32_PerfFormattedData_PerfProc_Process | Where-Object { $_.IdProcess -eq $MyProcessId } 
+                            $MyCurrentCpu = $IISStruct.Process.PercentProcessorTime
+                            $MyCurrentMemory = [Math]::Round(($IISStruct.Process.workingSetPrivate / 1MB),2)
+                            $IISStruct.CurrentCpu += $MyCurrentCpu
+                            $IISStruct.CurrentMemory += $MyCurrentMemory
+                            Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id: $_ Percent CPU: $MyCurrentCpu Private Memory: $MyCurrentMemory"
+                        }
+                    } 
+                    Else {
+                        $IISStruct.Process = Get-Wmiobject -Class Win32_PerfFormattedData_PerfProc_Process | Where-Object { $_.IdProcess -eq $IISStruct.ProcessId } 
+                        $IISStruct.CurrentCpu = $IISStruct.Process.PercentProcessorTime
+                        $IISStruct.CurrentMemory = [Math]::Round(($IISStruct.Process.workingSetPrivate / 1MB),2)
+                    }
+                    Write-Log Verbose Info "Application pool $($IISStruct.ApplicationPool) process id(s): $($IISStruct.ProcessId) Percent CPU: $($IISStruct.CurrentCpu) Private Memory: $($IISStruct.CurrentMemory)"
                     $Sites = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path='/']/parent::*" machine/webroot/apphost -name name
                     $Apps = Get-WebConfigurationProperty "/system.applicationHost/sites/site/application[@applicationPool='$($IISStruct.ApplicationPool)' and @path!='/']" machine/webroot/apphost -name path
                     $IISStruct.SitesCount = ($Sites,$Apps | ForEach-Object {$_.value}).count
