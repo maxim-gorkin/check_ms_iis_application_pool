@@ -11,7 +11,7 @@
 #   18/02/17 => Cleanup and PSSharpening
 #   15/09/17 => Fixed perfdata not working in some cases (Yannick Charton)
 #   22/09/17 => Fixed bug with multiple w3wp processes
-#   11/04/18 => Fixed bug with multiple w3wp processes, cpu and memory parts (Yannick Charton)
+#   11/04/18 => Fixed bug with multiple w3wp processes, cpu and memory parts and added warn/crit to perfdata (Yannick Charton)
 # Copyright:
 #   This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published
 #   by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed 
@@ -343,7 +343,7 @@ Function Invoke-CheckIISApplicationPool {
                     $IISStruct.SitesCount = ($Sites,$Apps | ForEach-Object {$_.value}).count
                     $IISStruct.ExitCode = 0
                     $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.SitesCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
-                    $IISStruct.ReturnString += " | 'pool_cpu'=$($IISStruct.CurrentCpu)%;;;0;100 'pool_memory'=$($IISStruct.CurrentMemory)MB;;;0; 'app_count'=$($IISStruct.SitesCount)"
+                    $IISStruct.ReturnString += " | 'pool_cpu'=$($IISStruct.CurrentCpu)%;$($IISStruct.WarningCpu);$($IISStruct.CriticalCpu);0;100 'pool_memory'=$($IISStruct.CurrentMemory)MB;$($IISStruct.WarningMemory);$($IISStruct.CriticalMemory);0; 'app_count'=$($IISStruct.SitesCount)"
                 }
                 Else {
                     If ( $IISStruct.AppPoolOnDemand = 1 ) {
@@ -355,7 +355,7 @@ Function Invoke-CheckIISApplicationPool {
                         $IISStruct.SitesCount = 0
                         $IISStruct.ExitCode = 0
                         $IISStruct.ReturnString = "OK:  Application Pool Started but no process is assigned yet `"$($IISStruct.ApplicationPool)`" with 0 Applications. {CPU: 0%}{Memory: 0MB}"
-                        $IISStruct.ReturnString += " | 'pool_cpu'=0%;;;0;100 'pool_memory'=0MB;;;0; 'app_count'=0"
+                        $IISStruct.ReturnString += " | 'pool_cpu'=0%;$($IISStruct.WarningCpu);$($IISStruct.CriticalCpu);0;100 'pool_memory'=0MB;$($IISStruct.WarningMemory);$($IISStruct.CriticalMemory);0; 'app_count'=0"
                     }
                     Else {
                         Throw "Application Pool `"$($IISStruct.ApplicationPool)`" not found in WMI."
@@ -416,7 +416,7 @@ Function Invoke-CheckIISWithAppCmd {
                     $IISStruct.SitesCount = ($Sites,$Apps | ForEach-Object {$_.value}).count
                     $IISStruct.ExitCode = 0
                     $IISStruct.ReturnString = "OK: Application Pool `"$($IISStruct.ApplicationPool)`" with $($IISStruct.SitesCount) Applications. {CPU: $($IISStruct.CurrentCpu) %}{Memory: $($IISStruct.CurrentMemory) MB}"
-                    $IISStruct.ReturnString += " | 'pool_cpu'=$($IISStruct.CurrentCpu)%;;;0;100 'pool_memory'=$($IISStruct.CurrentMemory)MB;;;0; 'app_count'=$($IISStruct.SitesCount)"
+                    $IISStruct.ReturnString += " | 'pool_cpu'=$($IISStruct.CurrentCpu)%;$($IISStruct.WarningCpu);$($IISStruct.CriticalCpu);0;100 'pool_memory'=$($IISStruct.CurrentMemory)MB;$($IISStruct.WarningMemory);$($IISStruct.CriticalMemory);0; 'app_count'=$($IISStruct.SitesCount)"
                 }
                 Else {
                     If ( $IISStruct.AppPoolOnDemand = 1 ) {
@@ -428,7 +428,7 @@ Function Invoke-CheckIISWithAppCmd {
                         $IISStruct.SitesCount = 0
                         $IISStruct.ExitCode = 0
                         $IISStruct.ReturnString = "OK:  Application Pool Started but no process is assigned yet `"$($IISStruct.ApplicationPool)`" with 0 Applications. {CPU: 0%}{Memory: 0MB}"
-                        $IISStruct.ReturnString += " | 'pool_cpu'=0%;;;0;100 'pool_memory'=0MB;;;0; 'app_count'=0"
+                        $IISStruct.ReturnString += " | 'pool_cpu'=0%;$($IISStruct.WarningCpu);$($IISStruct.CriticalCpu);0;100 'pool_memory'=0MB;$($IISStruct.WarningMemory);$($IISStruct.CriticalMemory);0; 'app_count'=0"
                     }
                     Else {
                         Throw "Application Pool `"$($IISStruct.ApplicationPool)`" not found in WMI."
