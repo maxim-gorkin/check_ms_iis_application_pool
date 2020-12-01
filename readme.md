@@ -14,8 +14,8 @@ In production.
 
 ### How To
 
-#Web-Scripting-Tools (PowerShell) is required:
-install-windowsfeature -name Web-Scripting-Tools
+#### Web-Scripting-Tools (PowerShell) is required:
+#### install-windowsfeature -name Web-Scripting-Tools
 
 -A,--ApplicationPool - ApplicationPool name
 
