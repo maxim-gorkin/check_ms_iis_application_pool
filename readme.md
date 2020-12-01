@@ -14,6 +14,9 @@ In production.
 
 ### How To
 
+#Web-Scripting-Tools (PowerShell) is required:
+install-windowsfeature -name Web-Scripting-Tools
+
 -A,--ApplicationPool - ApplicationPool name
 
 -ms,-minsites - Min site limit (def 0)
