@@ -14,7 +14,10 @@ In production.
 
 ### How To
 
-https://outsideit.net/monitoring-iis-application-pools/
+-A,--ApplicationPool - ApplicationPool name
+-ms,-minsites - Min site limit (def 0)
+-APOD,--AppPoolOnDemand
+-Appcmd,-AppCmd,-appcmd,-APPCMD
 
 ### Help
 
